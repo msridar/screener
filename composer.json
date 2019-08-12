@@ -4,6 +4,7 @@
     "type": "project",
     "keywords": ["screening", "example"],
     "license": "MIT",
+    "minimum-stability": "dev",
     "require": {
         "swagger-api/swagger-ui": "^3.23"
     },
