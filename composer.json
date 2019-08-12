@@ -1,0 +1,16 @@
+{
+    "name": "sridarmadurai/screener",
+    "description": "Simple Drupal 7 module which creates a questionnaire and results entity",
+    "type": "project",
+    "keywords": ["screening", "example"],
+    "license": "MIT",
+    "require": {
+        "swagger-api/swagger-ui": "^3.23"
+    },
+    "authors": [
+        {
+            "name": "Sridar Madurai",
+            "email": "srieee284@gmail.com"
+        }
+    ]
+}
