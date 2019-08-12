@@ -1,0 +1,12 @@
+name = Questionnaire
+description = A new content type of Questionnaire
+package = Screening
+core = 7.x
+files[] = questionnaire.install
+files[] = questionnaire.module
+files[] = views/questionnaire_take_test_field.inc
+
+dependencies[] = entityreference
+dependencies[] = field_collection
+dependencies[] = eck
+dependencies[] = views

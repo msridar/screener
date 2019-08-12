@@ -1,0 +1,344 @@
+<?php
+
+/**
+ * Implements hook_install().
+ */
+function questionnaire_install() {
+  node_types_rebuild();
+  create_results_bundle();
+  create_questionnaire_roles();
+  assign_required_permissions();
+  add_custom_fields();
+}
+
+function create_questionnaire_roles() {
+  $roles = array('supervisor', 'owner');
+  $existing_roles = user_roles();
+  foreach ($roles as $role) {
+    if (!in_array($role, $existing_roles)) {
+      $new_role = new stdClass();
+      $new_role->name = $role;
+      user_role_save($new_role);
+    }
+  }
+}
+
+function assign_required_permissions() {
+  $owner_permissions = array(
+    'create questionnaire content',
+    'edit own questionnaire content',
+    'access user profiles'
+  );
+  $supervisor_permissions = array(
+    'access user profiles'
+  );
+  $owner_role = user_role_load_by_name('owner');
+  $supervisor_role = user_role_load_by_name('supervisor');
+  user_role_grant_permissions($owner_role->rid, $owner_permissions);
+  user_role_grant_permissions($supervisor_role->rid, $supervisor_permissions);
+}
+
+function create_results_bundle() {
+  $eck_entity_type = new EntityType();
+  $eck_entity_type->name = 'questionnaire_assesment';
+  $eck_entity_type->label = 'Questionnaire Assesment';
+  $eck_entity_type->addProperty('title', 'Title', 'text', 'title');
+  $eck_entity_type->addProperty('uid', 'Author', 'integer', 'author');
+  $eck_entity_type->addProperty('created', 'Created', 'integer', 'created');
+  $eck_entity_type->addProperty('changed', 'Changed', 'integer', 'changed');
+  $eck_entity_type->save();
+
+  $eck_bundle = new Bundle();
+  $eck_bundle->entity_type = 'questionnaire_assesment';
+  $eck_bundle->name = 'results';
+  $eck_bundle->label = 'Results';
+  $eck_bundle->save();
+
+  drupal_get_schema('eck_questionnaire_assesment', TRUE);
+}
+/**
+ * Implements hook_uninstall().
+ */
+function questionnaire_uninstall() {
+  $type = 'questionnaire';
+  $sql = 'SELECT nid FROM {node} n WHERE n.type = :type';
+  $result = db_query($sql, array(':type' => $type));
+  $nids = array();
+  foreach ($result as $row) {
+    $nids[] = $row->nid;
+  }
+  if (count($nids) > 0) {
+    node_delete_multiple($nids);
+  }
+  delete_custom_fields();
+  node_type_delete($type);
+  $entity_type = EntityType::loadByName('questionnaire_assesment');
+  $entity_type->delete();
+  field_purge_batch(500);
+  questionnaire_delete_views();
+}
+
+function _questionnaire_installed_fields() {
+  $t = get_t();
+  return array(
+    'questionnaire_supervisors' => array(
+      'field_name' => 'field_questionnaire_supervisors',
+      'label' => $t('Supervisors'),
+      'type' => 'entityreference',
+      'entity_types' => array('node'),
+      'settings' => array(
+        'handler' => 'base',
+        'target_type' => 'user',
+        'handler_settings' => array(
+          'target_bundles' => array(),
+        ),
+      ),
+      'cardinality' => FIELD_CARDINALITY_UNLIMITED,
+    ),
+    'questionnaire_question_pack' => array(
+      'field_name' => 'field_questionnaire_questions',
+      'label' => $t('Questions'),
+      'type' => 'field_collection',
+      'settings' => array(),
+      'cardinality' => FIELD_CARDINALITY_UNLIMITED,
+    ),
+    'questionnaire_options_pack' => array(
+      'field_name' => 'field_questionnaire_options_pack',
+      'label' => $t('Options'),
+      'type' => 'field_collection',
+      'settings' => array(),
+      'cardinality' => 4,
+    ),
+    'questionnaire_question' => array(
+      'field_name' => 'field_questionnaire_question',
+      'label' => $t('Question'),
+      'type' => 'text',
+      'entity_types' => array('field_collection_item'),
+      'settings' => array(
+        'max_length' => 400,
+      )
+    ),
+    'questionnaire_question_score' => array(
+      'field_name' => 'field_question_score',
+      'label' => $t('Score'),
+      'type' => 'number_integer',
+      'entity_types' => array('field_collection_item')
+    ),
+    'questionnaire_option' => array(
+      'field_name' => 'field_questionnaire_option',
+      'label' => $t('Option'),
+      'type' => 'text',
+      'entity_types' => array('field_collection_item'),
+      'settings' => array(
+        'max_length' => 400,
+      )
+    ),
+    'questionnaire_option_isvalid' => array(
+      'field_name' => 'field_option_isvalid',
+      'label' => $t('Is Correct ?'),
+      'type' => 'list_boolean',
+      'entity_types' => array('field_collection_item'),
+      'settings' => array(
+        'allowed_values' => array('', '')
+      ),
+    ),
+    'questionnaire_results_questionnaire' => array(
+      'field_name' => 'field_questionnaire',
+      'label' => $t('Questionnaire'),
+      'type' => 'entityreference',
+      'entity_types' => array('questionnaire_assesment'),
+      'settings' => array(
+        'handler' => 'base',
+        'target_type' => 'node',
+        'handler_settings' => array(
+          'target_bundles' => array('questionnaire'),
+        ),
+      )
+    ),
+    'questionnaire_results_candidate' => array(
+      'field_name' => 'field_candidate',
+      'label' => $t('Candidate'),
+      'type' => 'entityreference',
+      'entity_types' => array('questionnaire_assesment'),
+      'settings' => array(
+        'handler' => 'base',
+        'target_type' => 'user',
+        'handler_settings' => array(
+          'target_bundles' => array(),
+        ),
+      )
+    ),
+    'questionnaire_results_score' => array(
+      'field_name' => 'field_total_score',
+      'label' => $t('Total Score'),
+      'type' => 'number_integer',
+      'entity_types' => array('questionnaire_assesment')
+    ),
+    'questionnaire_results_status' => array(
+      'field_name' => 'field_status',
+      'label' => $t('Status'),
+      'type' => 'list_text',
+      'entity_types' => array('questionnaire_assesment'),
+      'settings' => array(
+        'allowed_values' => array(
+          'started' => t('Started'),
+          'inprogress' => t('In Progress'),
+          'completed' => t('Completed')
+        )
+      ),
+    ),
+    'questionnaire_results_result' => array(
+      'field_name' => 'field_result',
+      'label' => $t('Result'),
+      'type' => 'list_text',
+      'entity_types' => array('questionnaire_assesment'),
+      'settings' => array(
+        'allowed_values' => array(
+          'passed' => t('Passed'),
+          'failed' => t('Failed')
+        )
+      ),
+    )
+  );
+}
+
+function _questionnaire_installed_instances() {
+  $t = get_t();
+  return array(
+    'questionnaire_supervisors' => array(
+      'field_name' => 'field_questionnaire_supervisors',
+      'entity_type' => 'node',
+      'bundle' => 'questionnaire',
+      'label' => $t('Supervisors'),
+      'type' => 'entityreference',
+      'widget' => array(
+        'type' => 'entityreference_autocomplete_tags'
+      )
+    ),
+    'questionnaire_question_pack' => array(
+      'field_name' => 'field_questionnaire_questions',
+      'entity_type' => 'node',
+      'bundle' => 'questionnaire',
+      'label' => $t('Questions'),
+      'widget' => array('type' => 'field_collection_embed'),
+      'required' => TRUE,
+    ),
+    'questionnaire_question' => array(
+      'field_name' => 'field_questionnaire_question',
+      'entity_type' => 'field_collection_item',
+      'bundle' => 'field_questionnaire_questions',
+      'label' => $t('Question'),
+      'required' => TRUE,
+    ),
+    'questionnaire_question_score' => array(
+      'field_name' => 'field_question_score',
+      'entity_type' => 'field_collection_item',
+      'bundle' => 'field_questionnaire_questions',
+      'label' => $t('Score'),
+      'settings' => array(
+        'min' => 1,
+        'max' => 5
+      ),
+      'required' => TRUE,
+    ),
+    'questionnaire_options_pack' => array(
+      'field_name' => 'field_questionnaire_options_pack',
+      'entity_type' => 'field_collection_item',
+      'bundle' => 'field_questionnaire_questions',
+      'label' => $t('Options'),
+      'widget' => array('type' => 'field_collection_embed'),
+      'required' => TRUE,
+    ),
+    'questionnaire_option' => array(
+      'field_name' => 'field_questionnaire_option',
+      'entity_type' => 'field_collection_item',
+      'bundle' => 'field_questionnaire_options_pack',
+      'label' => $t('Option'),
+      'required' => TRUE,
+    ),
+    'questionnaire_option_isvalid' => array(
+      'field_name' => 'field_option_isvalid',
+      'entity_type' => 'field_collection_item',
+      'bundle' => 'field_questionnaire_options_pack',
+      'label' => $t('Is Correct ?'),
+      'widget' => array(
+        'type' => 'options_onoff'
+      )
+    ),
+    'questionnaire_results_questionnaire' => array(
+      'field_name' => 'field_questionnaire',
+      'entity_type' => 'questionnaire_assesment',
+      'bundle' => 'results',
+      'label' => $t('Questionnaire'),
+      'type' => 'entityreference',
+      'widget' => array(
+        'type' => 'entityreference_autocomplete_tags'
+      )
+    ),
+    'questionnaire_results_candidate' => array(
+      'field_name' => 'field_candidate',
+      'entity_type' => 'questionnaire_assesment',
+      'bundle' => 'results',
+      'label' => $t('Candidate'),
+      'type' => 'entityreference',
+      'widget' => array(
+        'type' => 'entityreference_autocomplete_tags'
+      )
+    ),
+    'questionnaire_results_score' => array(
+      'field_name' => 'field_total_score',
+      'entity_type' => 'questionnaire_assesment',
+      'bundle' => 'results',
+      'label' => $t('Total Score'),
+      'required' => TRUE,
+    ),
+    'questionnaire_results_status' => array(
+      'field_name' => 'field_status',
+      'entity_type' => 'questionnaire_assesment',
+      'bundle' => 'results',
+      'label' => $t('Status'),
+      'required' => TRUE
+    ),
+    'questionnaire_results_result' => array(
+      'field_name' => 'field_result',
+      'entity_type' => 'questionnaire_assesment',
+      'bundle' => 'results',
+      'label' => $t('Result'),
+      'required' => TRUE
+    )
+  );
+}
+
+function add_custom_fields() {
+  foreach (_questionnaire_installed_fields() as $field) {
+    field_create_field($field);
+  }
+  foreach (_questionnaire_installed_instances() as $fieldinstance) {
+    field_create_instance($fieldinstance);
+  }
+}
+
+function delete_custom_fields() {
+  foreach (array_keys(_questionnaire_installed_fields()) as $field) {
+    field_delete_field($field);
+  }
+
+  $questionnaire_instances = field_info_instances('node', 'questionnaire');
+  foreach ($questionnaire_instances as $instance_name => $fieldinstance) {
+    field_delete_instance($fieldinstance);
+  }
+
+  $eck_questionnaire_entity_instances = field_info_instances('questionnaire_assesment', 'results');
+  foreach ($eck_questionnaire_entity_instances as $instance_name => $fieldinstance) {
+    field_delete_instance($fieldinstance);
+  }
+}
+
+function questionnaire_delete_views() {
+  $views = array('my_results','node_results', 'results_management','tests');
+  foreach ($views as $name) {
+    if ($view = views_get_view($name)) {
+      views_delete_view($view);
+    }
+  }
+}
